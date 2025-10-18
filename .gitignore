@@ -1,0 +1,17 @@
+# Flutter
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.idea/
+
+# Flask / Python
+__pycache__/
+.env
+*.pyc
+
+# General
+node_modules/
+.DS_Store
+*.log
