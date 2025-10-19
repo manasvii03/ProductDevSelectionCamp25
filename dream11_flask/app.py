@@ -46,23 +46,6 @@ except FileNotFoundError:
 
 
 def preprocess_match_data(match_data, historical_data_combined, player_roles_season_df, player_roles_global_df, feature_medians, X_train_cleaned_cols):
-    """
-    Preprocesses raw match data to create a DataFrame ready for prediction.
-
-    Args:
-        match_data (dict): Dictionary containing the loaded match JSON data.
-        historical_data_combined (pd.DataFrame): DataFrame containing combined historical data
-                                               with features (recency, rolling averages, etc.).
-                                               This should be pre-loaded.
-        player_roles_season_df (pd.DataFrame): DataFrame with seasonal player roles.
-        player_roles_global_df (pd.DataFrame): DataFrame with global player roles.
-        feature_medians (pd.Series): Series containing median values for imputation.
-        X_train_cleaned_cols (list): List of column names from the cleaned training data.
-
-    Returns:
-        pd.DataFrame: DataFrame for the squad with prepared features, or None if processing fails.
-        pd.DataFrame: Initial squad DataFrame with basic info, roles, and credits.
-    """
     print("Starting data preprocessing...")
     try:
         # Extract relevant information from the match data
@@ -105,9 +88,7 @@ def preprocess_match_data(match_data, historical_data_combined, player_roles_sea
         )
 
         # Combine roles: seasonal first, then global, then default to BAT
-        # Check if seasonal role column exists before using it
         seasonal_role_col = 'role_seasonal' if 'role_seasonal' in df_squad_with_roles.columns else None
-        # Check if global role column exists before using it
         global_role_col = 'role_global' if 'role_global' in df_squad_with_roles.columns else None
 
         if seasonal_role_col and global_role_col:
@@ -166,40 +147,31 @@ def preprocess_match_data(match_data, historical_data_combined, player_roles_sea
         X_squad = df_squad_features[required_features].copy()
 
         training_role_cols = [col for col in X_train_cleaned_cols if col.startswith('role_')]
-        # Ensure 'role' column exists before one-hot encoding
         if 'role' not in df_squad_features.columns:
              print("Error: 'role' column not found in df_squad_features. Cannot create one-hot encoded roles.")
-             return None, None # Cannot proceed without roles
+             return None, None
 
         squad_roles_one_hot = pd.get_dummies(df_squad_features['role'], prefix='role', dummy_na=False)
 
-        # Ensure all role columns from training are present in squad features, fill missing with False
         for col in training_role_cols:
             if col not in squad_roles_one_hot.columns:
                 squad_roles_one_hot[col] = False
 
-        # Reorder the one-hot encoded columns to match training data
         squad_roles_one_hot = squad_roles_one_hot[training_role_cols]
 
-        # Concatenate the features
         X_squad = pd.concat([X_squad, squad_roles_one_hot], axis=1)
 
-        # Ensure the order of all columns in X_squad matches X_train_cleaned
         X_squad = X_squad[X_train_cleaned_cols]
 
-
-        # Handle any remaining missing values using loaded medians
         if feature_medians is not None:
             X_squad = X_squad.fillna(feature_medians)
         else:
-             # Fallback if medians not loaded
              X_squad = X_squad.fillna(X_squad.median()) # Use squad medians as a last resort
 
         # Verify the number of rows in X_squad matches the number of players in the initial squad
         if len(X_squad) != len(df_squad_real):
              print(f"Warning: Number of rows in X_squad ({len(X_squad)}) does not match number of players in squad ({len(df_squad_real)}).")
              # This indicates a potential issue in merging or duplicate handling.
-             # You might need to inspect df_squad_features and X_squad at this point if errors persist.
 
 
         print("Data preprocessing completed successfully.")
@@ -278,12 +250,8 @@ def select_optimal_xi(df_squad_with_predictions):
             team2_players = team_player_ids[teams_in_squad[1]]
             prob += pulp.lpSum([player_vars[player_id] for player_id in team1_players]) >= 1, f"Min 1 player from {teams_in_squad[0]}"
             prob += pulp.lpSum([player_vars[player_id] for player_id in team2_players]) >= 1, f"Min 1 player from {teams_in_squad[1]}"
-
-
-        # Solve the problem
         prob.solve()
 
-        # Check solver status and extract result
         if prob.status == pulp.LpStatusOptimal:
             selected_xi_ids = [player_id for player_id in df_squad_with_predictions['player_id'] if player_vars[player_id].varValue == 1]
             df_selected_xi = df_squad_with_predictions[df_squad_with_predictions['player_id'].isin(selected_xi_ids)].copy()
@@ -376,10 +344,6 @@ except Exception as e:
 
 @app.route('/predict_team', methods=['POST'])
 def predict_team():
-    """
-    Flask endpoint to receive match data, predict fantasy points,
-    select the optimal XI, and return the result.
-    """
     print("Received request to /predict_team")
     if not request.json:
         print("Error: Request body is not JSON.")
@@ -437,8 +401,6 @@ def predict_team():
         return jsonify({"error": "Failed to select optimal XI using ILP. Check constraints or squad data."}), 500
 
     # --- Step 4: Prepare the response ---
-    # Convert the selected XI DataFrame to a JSON friendly format
-    # You might want to include additional player info here if needed for the frontend
     selected_xi_list = df_selected_xi[['player_id','player_name', 'team', 'role', 'credit', 'predicted_fantasy_points']].to_dict(orient='records')
 
     response_data = {
